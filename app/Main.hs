@@ -9,7 +9,6 @@ import Control.Monad
 import qualified Data.ByteString as BS
 import Data.Char (chr)
 import Data.IORef
-import Data.List (intercalate)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
 import Data.Time
@@ -42,6 +41,8 @@ therapy Inactive states = case pressedSwitches states of
   [one] -> Active $ keyId one
   _ -> Inactive
 therapy (Active a) states =
+  -- INVARIANT: keyIds are constant. This makes the application sound, but also
+  -- ensures head does not throw in the following expression.
   let currentState = state $ head $ filter (\s -> keyId s == a) states
    in case currentState of
         Pressed -> Active a
@@ -50,14 +51,11 @@ therapy Blocked states = case pressedSwitches states of
   [] -> Inactive
   _ -> Blocked
 
-toString :: [Word8] -> String
-toString = T.unpack . E.decodeUtf8 . BS.pack
-
-printKeyStates :: [KeyState] -> String
-printKeyStates states = intercalate ", " $ fmap (\KeyState {keyId, state} -> (show keyId) ++ ": " ++ (show state)) states
+toString :: BS.ByteString -> String
+toString = T.unpack . E.decodeUtf8
 
 -- Parse input from terminal emulator as a KeyEvent
-parseKeyEvents :: [Char] -> [KeyState]
+parseKeyEvents :: String -> [KeyState]
 parseKeyEvents bytes = case bytes of
   ('\x1B' : '[' : rest) -> parseUnpressed rest
   (key : rest) -> KeyState key Pressed : parseKeyEvents rest
@@ -69,10 +67,10 @@ parseKeyEvents bytes = case bytes of
             [key] -> KeyState (chr $ read key) Unpressed : parseKeyEvents after
             _ -> parseKeyEvents event
 
-initialize :: IO (Event [a])
+initialize :: IO (Event a)
 initialize = pure NoEvent
 
-sense :: Ptr Word8 -> Int -> IORef UTCTime -> Bool -> IO (DTime, Maybe (Event [Word8]))
+sense :: Ptr Word8 -> Int -> IORef UTCTime -> Bool -> IO (DTime, Maybe (Event BS.ByteString))
 sense buffer size lastTimeRef _ = do
   count <- hGetBufNonBlocking stdin buffer size
 
@@ -83,8 +81,8 @@ sense buffer size lastTimeRef _ = do
 
   if count > 0
     then do
-      bytes <- peekArray count buffer :: IO [Word8]
-      return (dt, Just $ Event bytes)
+      bytes <- peekArray count buffer
+      return (dt, Just $ Event $ BS.pack bytes)
     else return (dt, Just NoEvent)
 
 actuate :: IORef Bool -> Bool -> TherapyState -> IO Bool
@@ -102,7 +100,7 @@ fanOutEvents :: Event [a] -> [Event a]
 fanOutEvents (Event items) = map Event items
 fanOutEvents NoEvent = []
 
-parseKeyEventsSF :: SF (Event [Word8]) ([Event KeyState])
+parseKeyEventsSF :: SF (Event BS.ByteString) ([Event KeyState])
 parseKeyEventsSF = arr $ fanOutEvents . fmap toEvents
   where
     toEvents = parseKeyEvents . toString
@@ -112,7 +110,7 @@ keySF target = hold (KeyState target Unpressed) <<< (arr $ mergeEvents) <<< filt
   where
     filterByKey = arr (fmap $ filterE (\e -> keyId e == target)) :: SF ([Event KeyState]) ([Event KeyState])
 
-controller :: SF (Event [Word8]) [KeyState]
+controller :: SF (Event BS.ByteString) [KeyState]
 controller = arr (\(a, (b, c)) -> [a, b, c]) <<< ((keySF '1') &&& (keySF '2') &&& (keySF '3')) <<< parseKeyEventsSF
 
 therapySF :: SF [KeyState] TherapyState
@@ -120,7 +118,7 @@ therapySF = loopPre Inactive $ arr $ \(keyStates, previousState) ->
   let currentState = therapy previousState keyStates
    in (currentState, currentState)
 
-application :: SF (Event [Word8]) TherapyState
+application :: SF (Event BS.ByteString) TherapyState
 application = therapySF <<< controller
 
 main :: IO ()
