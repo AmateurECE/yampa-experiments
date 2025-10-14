@@ -20,13 +20,35 @@ import System.IO
 import System.Posix
 import Text.Regex.TDFA hiding (after, match)
 
-data SwitchState = Unpressed | Pressed deriving (Show)
+data SwitchState = Unpressed | Pressed deriving (Show, Eq)
 
 data KeyState = KeyState
   { keyId :: Char,
     state :: SwitchState
   }
   deriving (Show)
+
+data TherapyState = Active Char | Inactive | Blocked
+
+instance Show TherapyState where
+  show (Active _) = "Active"
+  show _ = "Inactive"
+
+pressedSwitches :: [KeyState] -> [KeyState]
+pressedSwitches = filter (\s -> state s == Pressed)
+
+therapy :: TherapyState -> [KeyState] -> TherapyState
+therapy Inactive states = case pressedSwitches states of
+  [one] -> Active $ keyId one
+  _ -> Inactive
+therapy (Active a) states =
+  let currentState = state $ head $ filter (\s -> keyId s == a) states
+   in case currentState of
+        Pressed -> Active a
+        Unpressed -> Blocked
+therapy Blocked states = case pressedSwitches states of
+  [] -> Inactive
+  _ -> Blocked
 
 toString :: [Word8] -> String
 toString = T.unpack . E.decodeUtf8 . BS.pack
@@ -65,10 +87,10 @@ sense buffer size lastTimeRef _ = do
       return (dt, Just $ Event bytes)
     else return (dt, Just NoEvent)
 
-actuate :: IORef Bool -> Bool -> [KeyState] -> IO Bool
+actuate :: IORef Bool -> Bool -> TherapyState -> IO Bool
 actuate terminate hasChanged value = do
   when hasChanged $ do
-    putStr $ "\r" ++ (printKeyStates value) ++ "\ESC[0K"
+    putStr $ "\rTherapy: " ++ show value ++ "\ESC[0K"
     hFlush stdout
   readIORef terminate >>= return
 
@@ -90,8 +112,16 @@ keySF target = hold (KeyState target Unpressed) <<< (arr $ mergeEvents) <<< filt
   where
     filterByKey = arr (fmap $ filterE (\e -> keyId e == target)) :: SF ([Event KeyState]) ([Event KeyState])
 
-application :: SF (Event [Word8]) [KeyState]
-application = arr (\(a, (b, c)) -> [a, b, c]) <<< ((keySF '1') &&& (keySF '2') &&& (keySF '3')) <<< parseKeyEventsSF
+controller :: SF (Event [Word8]) [KeyState]
+controller = arr (\(a, (b, c)) -> [a, b, c]) <<< ((keySF '1') &&& (keySF '2') &&& (keySF '3')) <<< parseKeyEventsSF
+
+therapySF :: SF [KeyState] TherapyState
+therapySF = loopPre Inactive $ arr $ \(keyStates, previousState) ->
+  let currentState = therapy previousState keyStates
+   in (currentState, currentState)
+
+application :: SF (Event [Word8]) TherapyState
+application = therapySF <<< controller
 
 main :: IO ()
 main = do
