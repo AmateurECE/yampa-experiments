@@ -107,17 +107,29 @@ parseKeyEventsSF = arr $ fanOutEvents . fmap toEvents
     toEvents = parseKeyEvents . toString
 
 keySF :: Char -> SF ([Event KeyState]) KeyState
-keySF target = hold (KeyState target Unpressed) <<< (arr $ mergeEvents) <<< filterByKey
+keySF target = proc allKeys -> do
+  key <- filterByKey -< allKeys
+  current <- arr $ mergeEvents -< key
+  stable <- hold (KeyState target Unpressed) -< current
+  returnA -< stable
   where
-    filterByKey = arr (fmap $ filterE (\e -> keyId e == target)) :: SF ([Event KeyState]) ([Event KeyState])
+    filterByKey = arr (fmap $ filterE (\e -> keyId e == target))
 
 controller :: SF (Event BS.ByteString) [KeyState]
-controller = arr (\(a, (b, c)) -> [a, b, c]) <<< ((keySF '1') &&& (keySF '2') &&& (keySF '3')) <<< parseKeyEventsSF
+controller = proc keyData -> do
+  events <- parseKeyEventsSF -< keyData
+
+  one <- keySF '1' -< events
+  two <- keySF '2' -< events
+  three <- keySF '3' -< events
+
+  returnA -< [one, two, three]
 
 therapySF :: SF [KeyState] TherapyState
-therapySF = loopPre Inactive $ arr $ \(keyStates, previousState) ->
-  let currentState = therapy previousState keyStates
-   in (currentState, currentState)
+therapySF = proc keyStates -> do
+  rec let current = therapy previous keyStates
+      previous <- iPre Inactive -< current
+  returnA -< current
 
 application :: SF (Event BS.ByteString) TherapyState
 application = therapySF <<< controller
