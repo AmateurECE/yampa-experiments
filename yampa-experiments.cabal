@@ -25,6 +25,10 @@ source-repository head
 
 library
   exposed-modules:
+      ActivationSwitch
+      ActivationSwitch.App
+      ActivationSwitch.Switch
+      ActivationSwitch.Therapy
       Echo
   other-modules:
       Paths_yampa_experiments
