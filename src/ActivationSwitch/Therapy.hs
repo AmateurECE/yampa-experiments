@@ -16,14 +16,14 @@ data KeyState = KeyState
   }
   deriving (Show)
 
-data TherapyState = Active Char | Inactive | Blocked
+data TherapyState = Active Char | Inactive | Blocked deriving (Eq)
 
 instance Show TherapyState where
   show (Active _) = "Active"
   show _ = "Inactive"
 
 pressedSwitches :: [KeyState] -> [KeyState]
-pressedSwitches = filter (\s -> state s == Pressed)
+pressedSwitches = filter ((== Pressed) . state)
 
 therapy :: TherapyState -> [KeyState] -> TherapyState
 therapy Inactive states = case pressedSwitches states of
@@ -32,7 +32,7 @@ therapy Inactive states = case pressedSwitches states of
 therapy (Active a) states =
   -- INVARIANT: keyIds are constant. This makes the application sound, but also
   -- ensures head does not throw in the following expression.
-  let currentState = state $ head $ filter (\s -> keyId s == a) states
+  let currentState = state $ head $ filter ((== a) . keyId) states
    in case currentState of
         Pressed -> Active a
         Unpressed -> Blocked
