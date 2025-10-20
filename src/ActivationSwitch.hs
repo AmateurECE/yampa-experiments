@@ -20,9 +20,11 @@ sense readAction lastTimeRef _ = do
   let dt = realToFrac (now `diffUTCTime` lastTime)
   return (dt, Just events)
 
-actuate :: IORef Bool -> Bool -> TherapyState -> IO Bool
-actuate terminate hasChanged value = do
-  when hasChanged $ do
+actuate :: IORef Bool -> IORef (Maybe UIState) -> Bool -> UIState -> IO Bool
+actuate terminate previousRef hasChanged value = do
+  previous <- readIORef previousRef
+  when (hasChanged && (maybe True (/= value) previous)) $ do
+    writeIORef previousRef $ Just value
     renderUI value
     hFlush stdout
   return =<< readIORef terminate
@@ -49,8 +51,13 @@ activationSwitch = do
   let readAction = readKeyEvents buf size
 
   lastTimeRef <- getCurrentTime >>= newIORef
+  uiState <- newIORef Nothing
 
-  reactimate initialize (sense readAction lastTimeRef) (actuate terminate) application
+  reactimate
+    initialize
+    (sense readAction lastTimeRef)
+    (actuate terminate uiState)
+    application
 
   -- Restore the terminal mode
   putStrLn "\x1B[<2u"

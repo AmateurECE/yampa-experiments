@@ -1,18 +1,23 @@
 {-# LANGUAGE Arrows #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module ActivationSwitch.App
   ( application,
     initialize,
     renderUI,
     T.TherapyState,
+    UIState,
   )
 where
 
+import qualified ActivationSwitch.Configuration as C
+import qualified ActivationSwitch.Power as P
 import qualified ActivationSwitch.Switch as S
 import qualified ActivationSwitch.Therapy as T
 import qualified Data.ByteString as BS
 import Data.Foldable
-import FRP.Yampa
+import qualified Data.List as L
+import FRP.Yampa hiding (event)
 import Linear
 
 initialize :: IO (Event a)
@@ -40,8 +45,49 @@ therapySF = proc keyStates -> do
       previous <- iPre T.Inactive -< current
   returnA -< current
 
-application :: SF (Event BS.ByteString) T.TherapyState
-application = therapySF <<< controllerSF <<< S.parseKeyEventsSF
+application :: SF (Event BS.ByteString) UIState
+application = proc event -> do
+  keyEvents <- S.parseKeyEventsSF -< event
+  keyStates <- controllerSF -< keyEvents
+  state <- therapySF -< keyStates
 
-renderUI :: T.TherapyState -> IO ()
-renderUI therapyState = putStr $ "\rTherapy: " ++ show therapyState ++ "\ESC[0K"
+  (selected, commands) <- C.configurationSF 3 -< keyEvents
+  (settings, current) <- P.powerLevelSF $ V3 '1' '2' '3' -< (state, commands)
+  returnA -< UIState state current selected settings
+
+data UIState = UIState
+  { therapy :: T.TherapyState,
+    powerLevel :: Maybe P.PowerLevel,
+    selectedKey :: Int,
+    powerLevels :: V3 P.PowerLevelSetting
+  }
+  deriving (Eq)
+
+class Render a where
+  render :: a -> String
+
+instance Render T.TherapyState where
+  render s = "Therapy: " ++ show s
+
+instance Render P.PowerLevelSetting where
+  render s = (show $ P.keyId s) ++ ": " ++ (show $ P.powerLevel s)
+
+instance Render (Maybe P.PowerLevel) where
+  render p =
+    "Power Level: " ++ case p of
+      Just a -> show a
+      Nothing -> "Off"
+
+select :: Int -> [String] -> [String]
+select ind xs =
+  let enumerated = zip xs (take (length xs) (iterate (+ 1) 0))
+   in sel <$> enumerated
+  where
+    sel (x, i) = if i == ind then "\ESC[7m" ++ x ++ "\ESC[27m" else x
+
+renderUI :: UIState -> IO ()
+renderUI state = do
+  putStrLn $ render (therapy state) ++ "\ESC[0K"
+  putStrLn $ render (powerLevel state) ++ "\ESC[0K"
+  putStr $ L.intercalate " " $ select (selectedKey state) $ render <$> (toList $ powerLevels state)
+  putStr "\ESC[0K\ESC[2A\r"

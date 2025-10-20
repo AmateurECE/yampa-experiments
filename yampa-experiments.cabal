@@ -27,6 +27,8 @@ library
   exposed-modules:
       ActivationSwitch
       ActivationSwitch.App
+      ActivationSwitch.Configuration
+      ActivationSwitch.Power
       ActivationSwitch.Switch
       ActivationSwitch.Therapy
       Echo
@@ -42,6 +44,7 @@ library
       Yampa
     , base >=4.7 && <5
     , bytestring
+    , lens
     , linear
     , regex-tdfa
     , text
@@ -62,6 +65,7 @@ executable yampa-experiments-exe
       Yampa
     , base >=4.7 && <5
     , bytestring
+    , lens
     , linear
     , regex-tdfa
     , text
@@ -84,6 +88,7 @@ test-suite yampa-experiments-test
       Yampa
     , base >=4.7 && <5
     , bytestring
+    , lens
     , linear
     , regex-tdfa
     , text

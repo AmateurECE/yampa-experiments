@@ -28,6 +28,7 @@ dependencies:
 - regex-tdfa
 - bytestring
 - text
+- lens
 
 ghc-options:
 - -Wall
