@@ -30,6 +30,7 @@ library
       ActivationSwitch.Switch
       ActivationSwitch.Therapy
       Echo
+      ShowKeyCodes
   other-modules:
       Paths_yampa_experiments
   autogen-modules:
