@@ -14,6 +14,7 @@ import qualified ActivationSwitch.Configuration as C
 import qualified ActivationSwitch.Power as P
 import qualified ActivationSwitch.Switch as S
 import qualified ActivationSwitch.Therapy as T
+import Control.Lens
 import qualified Data.ByteString as BS
 import Data.Foldable
 import qualified Data.List as L
@@ -32,11 +33,14 @@ keySF target = proc allKeys -> do
   where
     filterByKey = arr (fmap $ filterE (\e -> T.keyId e == target))
 
+keys :: V3 Char
+keys = V3 '1' '2' '3'
+
 controllerSF :: SF ([Event T.KeyState]) (V3 T.KeyState)
 controllerSF = proc events -> do
-  one <- keySF '1' -< events
-  two <- keySF '2' -< events
-  three <- keySF '3' -< events
+  one <- keySF $ keys ^. _x -< events
+  two <- keySF $ keys ^. _y -< events
+  three <- keySF $ keys ^. _z -< events
   returnA -< V3 one two three
 
 therapySF :: SF (V3 T.KeyState) T.TherapyState
@@ -52,7 +56,8 @@ application = proc event -> do
   state <- therapySF -< keyStates
 
   (selected, commands) <- C.configurationSF 3 -< keyEvents
-  (settings, current) <- P.powerLevelSF $ V3 '1' '2' '3' -< (state, commands)
+  settings <- P.setPowerLevelSF $ keys -< commands
+  current <- P.showPowerLevelSF -< (settings, state)
   returnA -< UIState state current selected settings
 
 data UIState = UIState
