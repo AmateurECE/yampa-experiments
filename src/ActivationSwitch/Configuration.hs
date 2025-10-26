@@ -22,7 +22,7 @@ data Command = Command
 data Controller = Controller
   { selectedKey :: Int,
     numberOfKeys :: Int,
-    commands :: [Command]
+    command :: Event Command
   }
 
 maxKey :: Controller -> Int
@@ -40,26 +40,24 @@ right c = case compare (selectedKey c) (maxKey c) of
   EQ -> c
 
 up :: Controller -> Controller
-up c = c {commands = Command (selectedKey c) Up : (commands c)}
+up c = c {command = Event $ Command (selectedKey c) Up}
 
 down :: Controller -> Controller
-down c = c {commands = Command (selectedKey c) Down : (commands c)}
+down c = c {command = Event $ Command (selectedKey c) Down}
 
-sequence :: Controller -> [Event KeyState] -> Controller
-sequence = foldl step
-  where
-    step controller (Event e) = case (keyId e, state e) of
-      ('h', Pressed) -> left controller
-      ('l', Pressed) -> right controller
-      ('j', Pressed) -> down controller
-      ('k', Pressed) -> up controller
-      _ -> controller
-    step controller NoEvent = controller
+step :: Controller -> Event KeyState -> Controller
+step controller (Event e) = case (keyId e, state e) of
+  ('h', Pressed) -> left controller
+  ('l', Pressed) -> right controller
+  ('j', Pressed) -> down controller
+  ('k', Pressed) -> up controller
+  _ -> controller
+step controller NoEvent = controller
 
-configurationSF :: Int -> SF ([Event KeyState]) (Int, [Event Command])
-configurationSF keys = proc events -> do
-  rec let controller = sequence (Controller previous keys []) events
+configurationSF :: Int -> SF (Event KeyState) (Int, Event Command)
+configurationSF keys = proc event' -> do
+  rec let controller = step (Controller previous keys NoEvent) event'
       previous <- iPre 0 -< selectedKey controller
-      let output = Event <$> (commands controller)
+      let output = (command controller)
       let current = selectedKey controller
   returnA -< (current, output)

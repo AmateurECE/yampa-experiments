@@ -21,22 +21,24 @@ import qualified Data.List as L
 import FRP.Yampa hiding (event)
 import Linear
 
-modeSF :: Int -> SF ([Event T.KeyState]) Int
-modeSF numberOfModes = proc events -> do
-  rec let increments =
-            L.length $
-              filter isEvent $
-                (filterE $ \k -> T.keyId k == 'm' && T.state k == T.Pressed) <$> events
-      let current' = (previous + increments) `mod` numberOfModes
+modeSF :: Int -> SF (Event T.KeyState) Int
+modeSF numberOfModes = proc event -> do
+  rec let current' = increment' previous event
       previous <- iPre 0 -< current'
   returnA -< current'
+  where
+    increment' :: Int -> Event T.KeyState -> Int
+    increment' previous (Event e) = case (T.keyId e, T.state e) of
+      ('m', T.Pressed) -> (previous + 1) `mod` numberOfModes
+      _ -> previous
+    increment' previous NoEvent = previous
 
 -- TODO: How to make this polymorphic?
 commandSwitchSF ::
-  SF ([Event T.KeyState], [Event C.Command]) (Int, V2 [Event C.Command])
-commandSwitchSF = proc (keyStates, commands) -> do
-  mode' <- modeSF 2 -< keyStates
-  let commands' = set' mode' commands $ pure []
+  SF (Event T.KeyState, Event C.Command) (Int, V2 (Event C.Command))
+commandSwitchSF = proc (keyState', commands) -> do
+  mode' <- modeSF 2 -< keyState'
+  let commands' = set' mode' commands $ pure NoEvent
   returnA -< (mode', commands')
   where
     set' mode' = case mode' of
@@ -47,23 +49,22 @@ commandSwitchSF = proc (keyStates, commands) -> do
 initialize :: IO (Event a)
 initialize = pure NoEvent
 
-keySF :: Char -> SF ([Event T.KeyState]) T.KeyState
+keySF :: Char -> SF (Event T.KeyState) T.KeyState
 keySF target = proc allKeys -> do
   key <- filterByKey -< allKeys
-  current' <- arr $ mergeEvents -< key
-  stable <- hold (T.KeyState target T.Unpressed) -< current'
+  stable <- hold (T.KeyState target T.Unpressed) -< key
   returnA -< stable
   where
-    filterByKey = arr (fmap $ filterE (\e -> T.keyId e == target))
+    filterByKey = arr (filterE (\e -> T.keyId e == target))
 
 keys :: V3 Char
 keys = V3 '1' '2' '3'
 
-controllerSF :: SF ([Event T.KeyState]) (V3 T.KeyState)
-controllerSF = proc events -> do
-  one <- keySF $ keys ^. _x -< events
-  two <- keySF $ keys ^. _y -< events
-  three <- keySF $ keys ^. _z -< events
+controllerSF :: SF (Event T.KeyState) (V3 T.KeyState)
+controllerSF = proc event -> do
+  one <- keySF $ keys ^. _x -< event
+  two <- keySF $ keys ^. _y -< event
+  three <- keySF $ keys ^. _z -< event
   returnA -< V3 one two three
 
 enabledKeysSF :: SF (V3 Bool, V3 T.KeyState) (V3 T.KeyState)
@@ -81,13 +82,13 @@ therapySF = proc keyStates -> do
 
 application :: SF (Event BS.ByteString) UIState
 application = proc event -> do
-  keyEvents <- S.parseKeyEventsSF -< event
-  keyStates <- controllerSF -< keyEvents
+  keyEvent <- S.parseKeyEventsSF -< event
+  keyStates <- controllerSF -< keyEvent
 
-  (selected, commands) <- C.configurationSF 3 -< keyEvents
-  (mode', commands') <- commandSwitchSF -< (keyEvents, commands)
-  powerLevels <- P.setPowerLevelSF $ keys -< commands' ^. _x
-  enabled <- S.setEnabledSF -< commands' ^. _y
+  (selected, command) <- C.configurationSF 3 -< keyEvent
+  (mode', command') <- commandSwitchSF -< (keyEvent, command)
+  powerLevels <- P.setPowerLevelSF $ keys -< command' ^. _x
+  enabled <- S.setEnabledSF -< command' ^. _y
 
   state <- therapySF <<< enabledKeysSF -< (enabled, keyStates)
   powerLevel' <- P.showPowerLevelSF -< (powerLevels, state)

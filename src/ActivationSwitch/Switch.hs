@@ -55,12 +55,10 @@ change Down True = False
 defaults :: V3 Bool
 defaults = pure True
 
-set :: V3 Bool -> [Event Command] -> V3 Bool
-set = foldl step
+set :: V3 Bool -> Event Command -> V3 Bool
+set v NoEvent = v
+set v (Event e) = applyCommand e v
   where
-    step v (Event e) = applyCommand e v
-    step v NoEvent = v
-
     applyCommand :: Command -> V3 Bool -> V3 Bool
     applyCommand c =
       let update = change $ direction c
@@ -74,21 +72,27 @@ set = foldl step
 -- Signal Functions
 --
 
-fanOutEvents :: Event [a] -> [Event a]
-fanOutEvents (Event items) = map Event items
-fanOutEvents NoEvent = []
-
 -- A signal function that receives key events as binary data and emits a stream
--- of KeyState events.
-parseKeyEventsSF :: SF (Event BS.ByteString) ([Event KeyState])
-parseKeyEventsSF = arr $ fanOutEvents . fmap toEvents
+-- of KeyState events. Since one binary message may contain multiple key
+-- events, we buffer and sequence the events on the output.
+parseKeyEventsSF :: SF (Event BS.ByteString) (Event KeyState)
+parseKeyEventsSF = proc binary -> do
+  rec let current = previous ++ events' binary
+      let (head', tail') = uncons' current
+      previous <- iPre [] -< tail'
+  returnA -< head'
   where
-    toEvents = parseKeyEvents . toString
+    events' :: (Event BS.ByteString) -> [KeyState]
+    events' e = case e of
+      (Event bs) -> parseKeyEvents $ toString bs
+      NoEvent -> []
 
--- TODO: I should probably refactor all of these to take a instead of [a]
--- I think I could also pull a polymorphic function out of here?
-setEnabledSF :: SF ([Event Command]) (V3 Bool)
-setEnabledSF = proc commands -> do
-  rec let current = set previous commands
+    uncons' :: [KeyState] -> (Event KeyState, [KeyState])
+    uncons' (x : xs) = (Event x, xs)
+    uncons' [] = (NoEvent, [])
+
+setEnabledSF :: SF (Event Command) (V3 Bool)
+setEnabledSF = proc command -> do
+  rec let current = set previous command
       previous <- iPre $ defaults -< current
   returnA -< current

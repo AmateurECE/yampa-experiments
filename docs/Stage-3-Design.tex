@@ -26,7 +26,7 @@
 
   % Connections
   \draw[line] (-4,0) -- (parser.west) node[signal]{Event ByteString};
-  \draw[line] (parser.east) -- node[signal]{[Event KeyState]} (controller.west);
+  \draw[line] (parser.east) -- node[signal]{Event KeyState} (controller.west);
 
   % Controller -> Filter -> Therapy
   \draw[line] (controller.east) -- node[signal]{KeyState(2:0)} ([yshift=0.2cm]filterenabled.west);
@@ -41,7 +41,7 @@
 
   % Stage 2
   \draw[line] ([xshift=0.3cm]parser.east) -- ++(0,-2.8) |- ++(-5,0) |- (configuration.west);
-  \draw[line] ([yshift=0.3cm]configuration.east) -- node[signal]{[Event Command]} ([yshift=-0.3cm]commandswitch.west);
+  \draw[line] ([yshift=0.3cm]configuration.east) -- node[signal]{Event Command} ([yshift=-0.3cm]commandswitch.west);
   \draw[line] ([yshift=0.2cm]setpowerlevel.east) -- node[signal]{PowerLevelSetting(2:0)} ([yshift=-0.3cm]powerlevel.west);
   \draw[line] ([yshift=-0.4cm]setpowerlevel.east) -- ++(7.3,0) node[right, font=\footnotesize]{Power Levels};
   \draw[line] ([xshift=-0.7cm]out) -- ++(0,-2.8) |- ++(-3.5,0) |- ([yshift=0.2cm]powerlevel.west);
@@ -49,9 +49,9 @@
   \draw[line] ([yshift=-0.4cm]configuration.east) -- ++(19.1,0) node[right, font=\footnotesize]{Selected Key};
 
   % Stage 3
-  \draw[line] ([yshift=-0.2cm]commandswitch.east) -- node[signal]{[Event Command]} ([yshift=-0.4cm]setpowerlevel.west);
+  \draw[line] ([yshift=-0.2cm]commandswitch.east) -- node[signal]{Event Command} ([yshift=-0.4cm]setpowerlevel.west);
   \draw[line] ([yshift=-0.6cm]commandswitch.east) -- ++(13.1,0) node[right, font=\footnotesize]{Selected Mode};
-  \draw[line] ([yshift=0.3cm]commandswitch.east) -- ++(0.4,0) -| ++(0,1.4) |- node[signal]{[Event Command]} (setenabled.west);
+  \draw[line] ([yshift=0.3cm]commandswitch.east) -- ++(0.4,0) -| ++(0,1.4) |- node[signal]{Event Command} (setenabled.west);
   \draw[line] (setenabled.east) -- ++(0.4,0) -| ++(0,1.2) -| ++(-4,0) |- node[signal]{Bool(2:0)} ([yshift=-0.3cm]filterenabled.west);
   \draw[line] ([xshift=0.3cm]parser.east) |- ([yshift=0.3cm]commandswitch.west);
 
