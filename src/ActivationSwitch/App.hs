@@ -27,31 +27,6 @@ import Linear
 -- 4. Check the rest of the TODOs
 -- 5. Some of this configuration garbage in Configuration.hs
 
-modeSF :: Nat -> SF (Event T.KeyState) Nat
-modeSF numberOfModes = proc event -> do
-  rec let current' = increment' previous event
-      previous <- iPre 0 -< current'
-  returnA -< current'
-  where
-    increment' :: Nat -> Event T.KeyState -> Nat
-    increment' previous (Event e) = case (T.keyId e, T.state e) of
-      ('m', T.Pressed) -> (previous + 1) `mod` numberOfModes
-      _ -> previous
-    increment' previous NoEvent = previous
-
--- TODO: How to make this polymorphic?
-commandSwitchSF ::
-  SF (Event T.KeyState, Event C.Command) (Nat, V2 (Event C.Command))
-commandSwitchSF = proc (keyState', commands) -> do
-  mode' <- modeSF 2 -< keyState'
-  let commands' = set' mode' commands $ pure NoEvent
-  returnA -< (mode', commands')
-  where
-    set' mode' = case mode' of
-      0 -> set _x
-      1 -> set _y
-      _ -> pure id
-
 initialize :: IO (Event a)
 initialize = pure NoEvent
 
@@ -92,7 +67,7 @@ application = proc event -> do
   keyStates <- controllerSF -< keyEvent
 
   (selected, command) <- C.configurationSF 3 -< keyEvent
-  (mode', command') <- commandSwitchSF -< (keyEvent, command)
+  (mode', command') <- C.commandSwitchSF -< (keyEvent, command)
   powerLevels <- P.setPowerLevelSF -< command' ^. _x
   enabled <- S.setEnabledSF -< command' ^. _y
 

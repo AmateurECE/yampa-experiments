@@ -1,15 +1,19 @@
 {-# LANGUAGE Arrows #-}
-{-# LANGUAGE TypeApplications #-}
 
 module ActivationSwitch.Configuration
   ( Command (..),
     Direction (..),
     configurationSF,
+    commandSwitchSF,
   )
 where
 
 import ActivationSwitch.Therapy
+import qualified ActivationSwitch.Therapy as T
+import Control.Lens hiding (set')
 import FRP.Yampa hiding (left, right)
+import GHC.TypeLits
+import Linear
 import Prelude hiding (sequence)
 
 data Direction = Up | Down
@@ -61,3 +65,28 @@ configurationSF keys = proc event' -> do
       let output = (command controller)
       let current = selectedKey controller
   returnA -< (current, output)
+
+modeSF :: Nat -> SF (Event T.KeyState) Nat
+modeSF numberOfModes = proc event' -> do
+  rec let current' = increment' previous event'
+      previous <- iPre 0 -< current'
+  returnA -< current'
+  where
+    increment' :: Nat -> Event T.KeyState -> Nat
+    increment' previous (Event e) = case (T.keyId e, T.state e) of
+      ('m', T.Pressed) -> (previous + 1) `mod` numberOfModes
+      _ -> previous
+    increment' previous NoEvent = previous
+
+-- TODO: How to make this polymorphic?
+commandSwitchSF ::
+  SF (Event T.KeyState, Event Command) (Nat, V2 (Event Command))
+commandSwitchSF = proc (keyState', commands) -> do
+  mode' <- modeSF 2 -< keyState'
+  let commands' = set' mode' commands $ pure NoEvent
+  returnA -< (mode', commands')
+  where
+    set' mode' = case mode' of
+      0 -> set _x
+      1 -> set _y
+      _ -> pure id
