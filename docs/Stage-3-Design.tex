@@ -42,7 +42,7 @@
   % Stage 2
   \draw[line] ([xshift=0.3cm]parser.east) -- ++(0,-2.8) |- ++(-5,0) |- (configuration.west);
   \draw[line] ([yshift=0.3cm]configuration.east) -- node[signal]{Event Command} ([yshift=-0.3cm]commandswitch.west);
-  \draw[line] ([yshift=0.2cm]setpowerlevel.east) -- node[signal]{PowerLevelSetting(2:0)} ([yshift=-0.3cm]powerlevel.west);
+  \draw[line] ([yshift=0.2cm]setpowerlevel.east) -- node[signal]{PowerLevel(2:0)} ([yshift=-0.3cm]powerlevel.west);
   \draw[line] ([yshift=-0.4cm]setpowerlevel.east) -- ++(7.3,0) node[right, font=\footnotesize]{Power Levels};
   \draw[line] ([xshift=-0.7cm]out) -- ++(0,-2.8) |- ++(-3.5,0) |- ([yshift=0.2cm]powerlevel.west);
   \draw[line] (powerlevel.east) -- ++(0.5,0) node[right, font=\footnotesize]{Power Level};

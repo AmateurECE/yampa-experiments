@@ -1,5 +1,4 @@
 {-# LANGUAGE Arrows #-}
-{-# LANGUAGE FlexibleInstances #-}
 
 module ActivationSwitch.App
   ( application,
@@ -19,15 +18,22 @@ import qualified Data.ByteString as BS
 import Data.Foldable
 import qualified Data.List as L
 import FRP.Yampa hiding (event)
+import GHC.TypeLits
 import Linear
 
-modeSF :: Int -> SF (Event T.KeyState) Int
+-- TODO: Refactor wishlist:
+-- 1. Polymorphic "setXSF" function
+-- 2. Polymorphism over the linear types?
+-- 4. Check the rest of the TODOs
+-- 5. Some of this configuration garbage in Configuration.hs
+
+modeSF :: Nat -> SF (Event T.KeyState) Nat
 modeSF numberOfModes = proc event -> do
   rec let current' = increment' previous event
       previous <- iPre 0 -< current'
   returnA -< current'
   where
-    increment' :: Int -> Event T.KeyState -> Int
+    increment' :: Nat -> Event T.KeyState -> Nat
     increment' previous (Event e) = case (T.keyId e, T.state e) of
       ('m', T.Pressed) -> (previous + 1) `mod` numberOfModes
       _ -> previous
@@ -35,7 +41,7 @@ modeSF numberOfModes = proc event -> do
 
 -- TODO: How to make this polymorphic?
 commandSwitchSF ::
-  SF (Event T.KeyState, Event C.Command) (Int, V2 (Event C.Command))
+  SF (Event T.KeyState, Event C.Command) (Nat, V2 (Event C.Command))
 commandSwitchSF = proc (keyState', commands) -> do
   mode' <- modeSF 2 -< keyState'
   let commands' = set' mode' commands $ pure NoEvent
@@ -87,20 +93,19 @@ application = proc event -> do
 
   (selected, command) <- C.configurationSF 3 -< keyEvent
   (mode', command') <- commandSwitchSF -< (keyEvent, command)
-  powerLevels <- P.setPowerLevelSF $ keys -< command' ^. _x
+  powerLevels <- P.setPowerLevelSF -< command' ^. _x
   enabled <- S.setEnabledSF -< command' ^. _y
 
   state <- therapySF <<< enabledKeysSF -< (enabled, keyStates)
-  powerLevel' <- P.showPowerLevelSF -< (powerLevels, state)
+  powerLevel' <- P.showPowerLevelSF $ keys -< (powerLevels, state)
 
   let settings' = mkSettings selected mode' powerLevels enabled
   returnA -< UIState state (CurrentPowerLevel powerLevel') settings'
   where
-    -- TODO: This sucks
-    mkSettings :: Int -> Int -> V3 P.PowerLevelSetting -> V3 Bool -> SwitchSettings
+    mkSettings :: Int -> Nat -> V3 P.PowerLevel -> V3 Bool -> SwitchSettings
     mkSettings selectedKey' mode' powerLevels enabled' =
       let values' = case mode' of
-            0 -> Left $ P.powerLevel <$> powerLevels
+            0 -> Left $ powerLevels
             _ -> Right $ enabled'
        in SwitchSettings selectedKey' keys values'
 
