@@ -1,4 +1,5 @@
 {-# LANGUAGE Arrows #-}
+{-# LANGUAGE TypeApplications #-}
 
 module ActivationSwitch.Configuration
   ( Command (..),
