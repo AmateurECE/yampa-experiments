@@ -26,16 +26,6 @@ change Up Medium = High
 change Down High = Medium
 change Up High = High
 
-set ::
-  V.Vector n PowerLevel ->
-  Event (Command n) ->
-  V.Vector n PowerLevel
-set v NoEvent = v
-set v (Event e) =
-  let index' = keyIndex e
-      value' = change (direction e) $ v `V.index` index'
-   in v V.// [(index', value')]
-
 -- Get the active power level based on the state of therapy and the power level
 -- settings.
 get ::
@@ -48,6 +38,8 @@ get ::
 get keys levels (Active c) = snd <$> find ((== c) . fst) (toList $ liftA2 (,) keys levels)
 get _ _ _ = Nothing
 
+-- Show the current power level given the state of therapy and the configured
+-- power level settings.
 showPowerLevelSF ::
   forall n.
   (KnownNat n) =>
@@ -55,10 +47,8 @@ showPowerLevelSF ::
   SF (V.Vector n PowerLevel, TherapyState) (Maybe PowerLevel)
 showPowerLevelSF keys = arr $ uncurry $ (get keys)
 
+-- Set the power level of switches in response to commands.
 setPowerLevelSF ::
   V.Vector n PowerLevel ->
   SF (Event (Command n)) (V.Vector n PowerLevel)
-setPowerLevelSF defaults = proc command -> do
-  rec let current = set previous command
-      previous <- iPre $ defaults -< current
-  returnA -< current
+setPowerLevelSF defaults = setParameterSF (set change) defaults

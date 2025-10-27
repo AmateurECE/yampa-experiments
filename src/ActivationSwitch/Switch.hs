@@ -5,6 +5,8 @@ module ActivationSwitch.Switch
   ( parseKeyEventsSF,
     readKeyEvents,
     setEnabledSF,
+    enabledKeysSF,
+    keySF,
   )
 where
 
@@ -53,19 +55,31 @@ change Down False = False
 change Up True = True
 change Down True = False
 
-defaults :: forall n. (KnownNat n) => V.Vector n Bool
-defaults = pure True
-
-set :: V.Vector n Bool -> Event (Command n) -> V.Vector n Bool
-set v NoEvent = v
-set v (Event e) =
-  let index' = keyIndex e
-      value' = change (direction e) $ v `V.index` index'
-   in v V.// [(index', value')]
-
 --
 -- Signal Functions
 --
+
+-- Derive the state of a switch s for all times t by filtering events on the
+-- switch s and holding the previous state.
+keySF :: Char -> SF (Event KeyState) KeyState
+keySF target = proc allKeys -> do
+  key <- filterByKey -< allKeys
+  stable <- hold (KeyState target Unpressed) -< key
+  returnA -< stable
+  where
+    filterByKey = arr (filterE (\e -> keyId e == target))
+
+-- Shunt the state of disabled switches to "Unpressed", effectively ignoring
+-- all changes in state that occur on these keys.
+enabledKeysSF ::
+  forall n.
+  (KnownNat n) =>
+  SF (V.Vector n Bool, V.Vector n KeyState) (V.Vector n KeyState)
+enabledKeysSF = arr $ uncurry $ liftA2 shunt'
+  where
+    shunt' :: Bool -> KeyState -> KeyState
+    shunt' True s = s
+    shunt' False s = s {state = Unpressed}
 
 -- A signal function that receives key events as binary data and emits a stream
 -- of KeyState events. Since one binary message may contain multiple key
@@ -86,8 +100,9 @@ parseKeyEventsSF = proc binary -> do
     uncons' (x : xs) = (Event x, xs)
     uncons' [] = (NoEvent, [])
 
-setEnabledSF :: forall n. (KnownNat n) => SF (Event (Command n)) (V.Vector n Bool)
-setEnabledSF = proc command -> do
-  rec let current = set previous command
-      previous <- iPre $ defaults -< current
-  returnA -< current
+-- Set the enabled/disabled state of switches in response to commands.
+setEnabledSF ::
+  forall n.
+  (KnownNat n) =>
+  SF (Event (Command n)) (V.Vector n Bool)
+setEnabledSF = setParameterSF (set change) (pure True)

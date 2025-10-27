@@ -8,6 +8,8 @@ module ActivationSwitch.Configuration
     Direction (..),
     configurationSF,
     commandSwitchSF,
+    setParameterSF,
+    set,
   )
 where
 
@@ -18,16 +20,34 @@ import Data.Proxy
 import qualified Data.Vector.Sized as V
 import FRP.Yampa hiding (left, right)
 import GHC.TypeLits
-import Unsafe.Coerce
 import Prelude hiding (sequence)
 
+-- Direction for a command.
 data Direction = Up | Down
 
+-- A command from the user to change configuration.
 data Command n = Command
   { keyIndex :: Finite n,
     direction :: Direction
   }
 
+-- Combinator for changing a parameter in a vector in response to a command.
+set ::
+  (Direction -> a -> a) ->
+  V.Vector n a ->
+  Command n ->
+  V.Vector n a
+set change v e =
+  let index' = keyIndex e
+      value' = change (direction e) $ v `V.index` index'
+   in v V.// [(index', value')]
+
+--
+-- Controller
+--
+
+-- Controller is an abstraction that maps a stream of key events into a stream
+-- of commands.
 data Controller n = Controller
   { selectedKey :: Finite n,
     command :: Event (Command n)
@@ -52,6 +72,7 @@ up c = c {command = Event $ Command (selectedKey c) Up}
 down :: Controller n -> Controller n
 down c = c {command = Event $ Command (selectedKey c) Down}
 
+-- Step the controller in response to a command.
 step ::
   forall n.
   (KnownNat n) =>
@@ -66,6 +87,27 @@ step controller (Event e) = case (keyId e, state e) of
   _ -> controller
 step controller NoEvent = controller
 
+--
+-- Signal Functions
+--
+
+-- Combinator for constructing a SF that sets parameters based on received
+-- commands.
+setParameterSF ::
+  forall n a.
+  (a -> Command n -> a) ->
+  a ->
+  SF (Event (Command n)) a
+setParameterSF set' defaults' = proc command' -> do
+  rec let current' = update' previous' command'
+      previous' <- iPre $ defaults' -< current'
+  returnA -< current'
+  where
+    update' v (Event c) = set' v c
+    update' v NoEvent = v
+
+-- Map the stream of key events into a stream of commands by actuating a
+-- Controller.
 configurationSF ::
   forall n.
   (KnownNat n) =>
@@ -77,14 +119,16 @@ configurationSF = proc event' -> do
       let current = selectedKey controller
   returnA -< (current, output)
 
+-- Used for the command switch. The currently selected mode routes commands to
+-- one of the downstream signal functions. Change the mode by pressing the 'm'
+-- key.
 modeSF :: forall n. (KnownNat n) => SF (Event T.KeyState) (Finite n)
 modeSF = proc event' -> do
   rec let current' = increment' previous event'
       previous <- iPre 0 -< current'
-  -- INVARIANT: increment' will never produce a Nat greater than or equal to n
-  returnA -< unsafeCoerce $ current'
+  returnA -< finite current'
   where
-    increment' :: Nat -> Event T.KeyState -> Nat
+    increment' :: Integer -> Event T.KeyState -> Integer
     increment' previous (Event e) =
       let max' = (fromInteger $ natVal $ Proxy @n)
        in case (T.keyId e, T.state e) of
@@ -92,6 +136,7 @@ modeSF = proc event' -> do
             _ -> previous
     increment' previous NoEvent = previous
 
+-- Switch commands between a group of downstream signal functions.
 commandSwitchSF ::
   forall m n.
   (KnownNat n) =>

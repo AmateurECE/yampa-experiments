@@ -1,6 +1,9 @@
+{-# LANGUAGE DataKinds #-}
+
 module ActivationSwitch.UI
-  ( CurrentPowerLevel (..),
+  ( mkSettings,
     SwitchSettings (..),
+    mkUIState,
     UIState (..),
     renderUI,
   )
@@ -8,6 +11,7 @@ where
 
 import qualified ActivationSwitch.Power as P
 import qualified ActivationSwitch.Therapy as T
+import Data.Finite
 import Data.Foldable
 import qualified Data.List as L
 import qualified Data.Vector.Sized as V
@@ -68,6 +72,23 @@ instance Render (SwitchSettings n) where
          in sel <$> enumerated
 
       sel (x, i) = if i == (selectedKey s) then "\ESC[7m" ++ x ++ "\ESC[27m" else x
+
+mkSettings ::
+  V.Vector n Char ->
+  Finite n ->
+  Finite 2 ->
+  V.Vector n P.PowerLevel ->
+  V.Vector n Bool ->
+  SwitchSettings n
+mkSettings keys s mode' powerLevels' enabled' =
+  let selectedKey' = fromInteger $ getFinite s
+      values' = case mode' of
+        0 -> Left $ powerLevels'
+        _ -> Right $ enabled'
+   in SwitchSettings selectedKey' keys values'
+
+mkUIState :: T.TherapyState -> Maybe P.PowerLevel -> SwitchSettings n -> UIState n
+mkUIState therapy' powerLevel' settings' = UIState therapy' (CurrentPowerLevel powerLevel') settings'
 
 renderUI :: UIState n -> IO ()
 renderUI state = do
