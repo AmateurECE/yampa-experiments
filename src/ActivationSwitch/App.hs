@@ -1,6 +1,7 @@
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE TypeApplications #-}
 
 module ActivationSwitch.App
   ( application,
@@ -11,6 +12,8 @@ module ActivationSwitch.App
   )
 where
 
+import qualified ActivationSwitch.Configuration as C
+import qualified ActivationSwitch.Power as P
 import qualified ActivationSwitch.Switch as S
 import qualified ActivationSwitch.Therapy as T
 import ActivationSwitch.UI
@@ -26,6 +29,10 @@ type Bus = V.Vector NumberOfKeys
 
 keys :: Bus Char
 keys = V.fromTuple ('1', '2', '3')
+
+-- The default power levels for the set of keys
+defaults :: Bus P.PowerLevel
+defaults = V.fromTuple (P.Medium, P.High, P.Low)
 
 initialize :: IO (Event a)
 initialize = pure NoEvent
@@ -43,9 +50,16 @@ therapySF = proc keyStates -> do
       previous <- iPre T.Inactive -< current'
   returnA -< current'
 
-application :: SF (Event BS.ByteString) UIState
+application :: SF (Event BS.ByteString) (UIState NumberOfKeys)
 application = proc event -> do
   keyEvent <- S.parseKeyEventsSF -< event
   keyStates <- controllerSF -< keyEvent
+
+  (selected, command) <- C.configurationSF @NumberOfKeys -< keyEvent
+  powerLevels <- P.setPowerLevelSF defaults -< command
+
   state <- therapySF -< keyStates
-  returnA -< mkUIState state
+  powerLevel' <- P.showPowerLevelSF $ keys -< (powerLevels, state)
+
+  let settings' = mkSettings keys selected powerLevels
+  returnA -< mkUIState state powerLevel' settings'

@@ -1,4 +1,6 @@
-# Activation Switch (Stage 1)
+# Activation Switch (Stage 2)
+
+The following diagram illustrates the connections between the signal functions.
 
 ![Stage 1 Design](./docs/ActivationSwitch-Design.png)
 

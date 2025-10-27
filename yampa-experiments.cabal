@@ -27,6 +27,8 @@ library
   exposed-modules:
       ActivationSwitch
       ActivationSwitch.App
+      ActivationSwitch.Configuration
+      ActivationSwitch.Power
       ActivationSwitch.Switch
       ActivationSwitch.Therapy
       ActivationSwitch.UI
