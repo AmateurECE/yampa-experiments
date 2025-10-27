@@ -1,4 +1,8 @@
 {-# LANGUAGE Arrows #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeApplications #-}
 
 module ActivationSwitch.App
   ( application,
@@ -14,12 +18,12 @@ import qualified ActivationSwitch.Power as P
 import qualified ActivationSwitch.Switch as S
 import qualified ActivationSwitch.Therapy as T
 import ActivationSwitch.UI
-import Control.Lens hiding (set')
 import qualified Data.ByteString as BS
+import Data.Finite
 import Data.Foldable
+import qualified Data.Vector.Sized as V
 import FRP.Yampa hiding (event)
 import GHC.TypeLits
-import Linear
 
 -- TODO: Refactor wishlist:
 -- 1. Polymorphic "setXSF" function
@@ -38,48 +42,56 @@ keySF target = proc allKeys -> do
   where
     filterByKey = arr (filterE (\e -> T.keyId e == target))
 
-keys :: V3 Char
-keys = V3 '1' '2' '3'
+type NumberOfKeys = 3 :: Nat
 
-controllerSF :: SF (Event T.KeyState) (V3 T.KeyState)
+type Bus = V.Vector NumberOfKeys
+
+keys :: Bus Char
+keys = V.fromTuple ('1', '2', '3')
+
+-- The default power levels for the set of keys
+defaults :: Bus P.PowerLevel
+defaults = V.fromTuple (P.Medium, P.High, P.Low)
+
+controllerSF :: SF (Event T.KeyState) (Bus T.KeyState)
 controllerSF = proc event -> do
-  one <- keySF $ keys ^. _x -< event
-  two <- keySF $ keys ^. _y -< event
-  three <- keySF $ keys ^. _z -< event
-  returnA -< V3 one two three
+  one <- keySF $ keys `V.index` 0 -< event
+  two <- keySF $ keys `V.index` 1 -< event
+  three <- keySF $ keys `V.index` 2 -< event
+  returnA -< V.fromTuple (one, two, three)
 
-enabledKeysSF :: SF (V3 Bool, V3 T.KeyState) (V3 T.KeyState)
+enabledKeysSF :: SF (Bus Bool, Bus T.KeyState) (Bus T.KeyState)
 enabledKeysSF = arr $ uncurry $ liftA2 shunt'
   where
     shunt' :: Bool -> T.KeyState -> T.KeyState
     shunt' True s = s
     shunt' False s = s {T.state = T.Unpressed}
 
-therapySF :: SF (V3 T.KeyState) T.TherapyState
+therapySF :: SF (Bus T.KeyState) T.TherapyState
 therapySF = proc keyStates -> do
   rec let current' = T.therapy previous $ toList keyStates
       previous <- iPre T.Inactive -< current'
   returnA -< current'
 
-application :: SF (Event BS.ByteString) UIState
+application :: SF (Event BS.ByteString) (UIState NumberOfKeys)
 application = proc event -> do
   keyEvent <- S.parseKeyEventsSF -< event
   keyStates <- controllerSF -< keyEvent
 
-  (selected, command) <- C.configurationSF 3 -< keyEvent
-  (mode', command') <- C.commandSwitchSF -< (keyEvent, command)
-  powerLevels <- P.setPowerLevelSF -< command' ^. _x
-  enabled <- S.setEnabledSF -< command' ^. _y
+  (selected, command) <- C.configurationSF @NumberOfKeys -< keyEvent
+  (mode', command') <- C.commandSwitchSF @NumberOfKeys @2 -< (keyEvent, command)
+  powerLevels <- P.setPowerLevelSF defaults -< command' `V.index` 0
+  enabled <- S.setEnabledSF -< command' `V.index` 1
 
   state <- therapySF <<< enabledKeysSF -< (enabled, keyStates)
   powerLevel' <- P.showPowerLevelSF $ keys -< (powerLevels, state)
 
-  let settings' = mkSettings selected mode' powerLevels enabled
+  let settings' = mkSettings selected (fromInteger $ getFinite mode') powerLevels enabled
   returnA -< UIState state (CurrentPowerLevel powerLevel') settings'
   where
-    mkSettings :: Int -> Nat -> V3 P.PowerLevel -> V3 Bool -> SwitchSettings
+    mkSettings :: Finite n -> Finite 2 -> Bus P.PowerLevel -> Bus Bool -> SwitchSettings NumberOfKeys
     mkSettings selectedKey' mode' powerLevels enabled' =
       let values' = case mode' of
             0 -> Left $ powerLevels
             _ -> Right $ enabled'
-       in SwitchSettings selectedKey' keys values'
+       in SwitchSettings (fromInteger $ getFinite selectedKey') keys values'

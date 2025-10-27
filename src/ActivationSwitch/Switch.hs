@@ -1,4 +1,5 @@
 {-# LANGUAGE Arrows #-}
+{-# LANGUAGE RankNTypes #-}
 
 module ActivationSwitch.Switch
   ( parseKeyEventsSF,
@@ -9,14 +10,14 @@ where
 
 import ActivationSwitch.Configuration
 import ActivationSwitch.Therapy
-import Control.Lens hiding (set)
 import qualified Data.ByteString as BS
 import Data.Char
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
+import qualified Data.Vector.Sized as V
 import FRP.Yampa hiding (after, count, event)
 import Foreign
-import Linear
+import GHC.TypeLits
 import System.IO
 import Text.Regex.TDFA hiding (after)
 
@@ -52,21 +53,15 @@ change Down False = False
 change Up True = True
 change Down True = False
 
-defaults :: V3 Bool
+defaults :: forall n. (KnownNat n) => V.Vector n Bool
 defaults = pure True
 
-set :: V3 Bool -> Event Command -> V3 Bool
+set :: V.Vector n Bool -> Event (Command n) -> V.Vector n Bool
 set v NoEvent = v
-set v (Event e) = applyCommand e v
-  where
-    applyCommand :: Command -> V3 Bool -> V3 Bool
-    applyCommand c =
-      let update = change $ direction c
-       in case keyIndex c of
-            0 -> (& _x %~ update)
-            1 -> (& _y %~ update)
-            2 -> (& _z %~ update)
-            _ -> id
+set v (Event e) =
+  let index' = keyIndex e
+      value' = change (direction e) $ v `V.index` index'
+   in v V.// [(index', value')]
 
 --
 -- Signal Functions
@@ -91,7 +86,7 @@ parseKeyEventsSF = proc binary -> do
     uncons' (x : xs) = (Event x, xs)
     uncons' [] = (NoEvent, [])
 
-setEnabledSF :: SF (Event Command) (V3 Bool)
+setEnabledSF :: forall n. (KnownNat n) => SF (Event (Command n)) (V.Vector n Bool)
 setEnabledSF = proc command -> do
   rec let current = set previous command
       previous <- iPre $ defaults -< current

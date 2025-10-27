@@ -10,22 +10,22 @@ import qualified ActivationSwitch.Power as P
 import qualified ActivationSwitch.Therapy as T
 import Data.Foldable
 import qualified Data.List as L
-import Linear
+import qualified Data.Vector.Sized as V
 
 newtype CurrentPowerLevel = CurrentPowerLevel {current :: Maybe P.PowerLevel}
   deriving (Eq)
 
-data SwitchSettings = SwitchSettings
+data SwitchSettings n = SwitchSettings
   { selectedKey :: Int,
-    keyIds :: V3 Char,
-    values :: Either (V3 P.PowerLevel) (V3 Bool)
+    keyIds :: V.Vector n Char,
+    values :: Either (V.Vector n P.PowerLevel) (V.Vector n Bool)
   }
   deriving (Eq)
 
-data UIState = UIState
+data UIState n = UIState
   { therapy :: T.TherapyState,
     powerLevel :: CurrentPowerLevel,
-    settings :: SwitchSettings
+    settings :: SwitchSettings n
   }
   deriving (Eq)
 
@@ -48,7 +48,7 @@ instance Render CurrentPowerLevel where
       Just a -> show a
       Nothing -> "Off"
 
-instance Render SwitchSettings where
+instance Render (SwitchSettings n) where
   render s =
     L.intercalate " " $
       select $
@@ -59,7 +59,7 @@ instance Render SwitchSettings where
       label' :: Char -> String -> String
       label' k v = [k] ++ ": " ++ v
 
-      render' :: (Render a) => (V3 a) -> [String]
+      render' :: (Render a) => (V.Vector n a) -> [String]
       render' = (fmap render) . toList
 
       select :: [String] -> [String]
@@ -69,7 +69,7 @@ instance Render SwitchSettings where
 
       sel (x, i) = if i == (selectedKey s) then "\ESC[7m" ++ x ++ "\ESC[27m" else x
 
-renderUI :: UIState -> IO ()
+renderUI :: UIState n -> IO ()
 renderUI state = do
   putStrLn $ render (therapy state) ++ "\ESC[0K"
   putStrLn $ render (powerLevel state) ++ "\ESC[0K"

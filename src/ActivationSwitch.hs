@@ -20,7 +20,7 @@ sense readAction lastTimeRef _ = do
   let dt = realToFrac (now `diffUTCTime` lastTime)
   return (dt, Just events)
 
-actuate :: IORef Bool -> IORef (Maybe UIState) -> Bool -> UIState -> IO Bool
+actuate :: IORef Bool -> IORef (Maybe (UIState n)) -> Bool -> (UIState n) -> IO Bool
 actuate terminate previousRef hasChanged value = do
   previous <- readIORef previousRef
   when (hasChanged && (maybe True (/= value) previous)) $ do

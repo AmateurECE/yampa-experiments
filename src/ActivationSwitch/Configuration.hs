@@ -1,4 +1,7 @@
 {-# LANGUAGE Arrows #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 module ActivationSwitch.Configuration
   ( Command (..),
@@ -10,46 +13,51 @@ where
 
 import ActivationSwitch.Therapy
 import qualified ActivationSwitch.Therapy as T
-import Control.Lens hiding (set')
+import Data.Finite
+import Data.Proxy
+import qualified Data.Vector.Sized as V
 import FRP.Yampa hiding (left, right)
 import GHC.TypeLits
-import Linear
+import Unsafe.Coerce
 import Prelude hiding (sequence)
 
 data Direction = Up | Down
 
-data Command = Command
-  { keyIndex :: Int,
+data Command n = Command
+  { keyIndex :: Finite n,
     direction :: Direction
   }
 
-data Controller = Controller
-  { selectedKey :: Int,
-    numberOfKeys :: Int,
-    command :: Event Command
+data Controller n = Controller
+  { selectedKey :: Finite n,
+    command :: Event (Command n)
   }
 
-maxKey :: Controller -> Int
-maxKey c = (numberOfKeys c) - 1
-
-left :: Controller -> Controller
-left c = case selectedKey c of
+left :: forall n. (KnownNat n) => Controller n -> Controller n
+left c = case getFinite $ selectedKey c of
   0 -> c
-  n -> c {selectedKey = n - 1}
+  n -> c {selectedKey = finite $ n - 1}
 
-right :: Controller -> Controller
-right c = case compare (selectedKey c) (maxKey c) of
-  GT -> c {selectedKey = maxKey c}
-  LT -> c {selectedKey = (selectedKey c) + 1}
-  EQ -> c
+right :: forall n. (KnownNat n) => Controller n -> Controller n
+right c =
+  let selected' = getFinite $ selectedKey c
+      max' = (natVal $ Proxy @n) - 1
+   in case compare selected' max' of
+        LT -> c {selectedKey = (selectedKey c) + 1}
+        _ -> c
 
-up :: Controller -> Controller
+up :: Controller n -> Controller n
 up c = c {command = Event $ Command (selectedKey c) Up}
 
-down :: Controller -> Controller
+down :: Controller n -> Controller n
 down c = c {command = Event $ Command (selectedKey c) Down}
 
-step :: Controller -> Event KeyState -> Controller
+step ::
+  forall n.
+  (KnownNat n) =>
+  Controller n ->
+  Event KeyState ->
+  Controller n
 step controller (Event e) = case (keyId e, state e) of
   ('h', Pressed) -> left controller
   ('l', Pressed) -> right controller
@@ -58,35 +66,37 @@ step controller (Event e) = case (keyId e, state e) of
   _ -> controller
 step controller NoEvent = controller
 
-configurationSF :: Int -> SF (Event KeyState) (Int, Event Command)
-configurationSF keys = proc event' -> do
-  rec let controller = step (Controller previous keys NoEvent) event'
+configurationSF ::
+  forall n.
+  (KnownNat n) =>
+  SF (Event KeyState) (Finite n, Event (Command n))
+configurationSF = proc event' -> do
+  rec let controller = step (Controller previous NoEvent) event'
       previous <- iPre 0 -< selectedKey controller
       let output = (command controller)
       let current = selectedKey controller
   returnA -< (current, output)
 
-modeSF :: Nat -> SF (Event T.KeyState) Nat
-modeSF numberOfModes = proc event' -> do
+modeSF :: forall n. (KnownNat n) => SF (Event T.KeyState) (Finite n)
+modeSF = proc event' -> do
   rec let current' = increment' previous event'
       previous <- iPre 0 -< current'
-  returnA -< current'
+  -- INVARIANT: increment' will never produce a Nat greater than or equal to n
+  returnA -< unsafeCoerce $ current'
   where
     increment' :: Nat -> Event T.KeyState -> Nat
-    increment' previous (Event e) = case (T.keyId e, T.state e) of
-      ('m', T.Pressed) -> (previous + 1) `mod` numberOfModes
-      _ -> previous
+    increment' previous (Event e) =
+      let max' = (fromInteger $ natVal $ Proxy @n)
+       in case (T.keyId e, T.state e) of
+            ('m', T.Pressed) -> (previous + 1) `mod` max'
+            _ -> previous
     increment' previous NoEvent = previous
 
--- TODO: How to make this polymorphic?
 commandSwitchSF ::
-  SF (Event T.KeyState, Event Command) (Nat, V2 (Event Command))
-commandSwitchSF = proc (keyState', commands) -> do
-  mode' <- modeSF 2 -< keyState'
-  let commands' = set' mode' commands $ pure NoEvent
+  forall m n.
+  (KnownNat n) =>
+  SF (Event T.KeyState, Event (Command m)) (Finite n, V.Vector n (Event (Command m)))
+commandSwitchSF = proc (keyState', command') -> do
+  mode' <- modeSF @n -< keyState'
+  let commands' = V.replicate NoEvent V.// [(mode', command')]
   returnA -< (mode', commands')
-  where
-    set' mode' = case mode' of
-      0 -> set _x
-      1 -> set _y
-      _ -> pure id
