@@ -1,4 +1,4 @@
-# Activation Switch (Stage 2)
+# Activation Switch (Stage 3)
 
 The following diagram illustrates the connections between the signal functions.
 

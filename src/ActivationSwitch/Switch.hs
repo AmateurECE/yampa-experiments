@@ -1,19 +1,25 @@
 {-# LANGUAGE Arrows #-}
+{-# LANGUAGE RankNTypes #-}
 
 module ActivationSwitch.Switch
   ( parseKeyEventsSF,
     readKeyEvents,
+    setEnabledSF,
+    enabledKeysSF,
     keySF,
   )
 where
 
+import ActivationSwitch.Configuration
 import ActivationSwitch.Therapy
 import qualified Data.ByteString as BS
 import Data.Char
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
+import qualified Data.Vector.Sized as V
 import FRP.Yampa hiding (after, count, event)
 import Foreign
+import GHC.TypeLits
 import System.IO
 import Text.Regex.TDFA hiding (after)
 
@@ -43,6 +49,12 @@ readKeyEvents buffer size = do
       return $ Event $ BS.pack bytes
     else return NoEvent
 
+change :: Direction -> Bool -> Bool
+change Up False = True
+change Down False = False
+change Up True = True
+change Down True = False
+
 --
 -- Signal Functions
 --
@@ -56,6 +68,18 @@ keySF target = proc allKeys -> do
   returnA -< stable
   where
     filterByKey = arr (filterE (\e -> keyId e == target))
+
+-- Shunt the state of disabled switches to "Unpressed", effectively ignoring
+-- all changes in state that occur on these keys.
+enabledKeysSF ::
+  forall n.
+  (KnownNat n) =>
+  SF (V.Vector n Bool, V.Vector n KeyState) (V.Vector n KeyState)
+enabledKeysSF = arr $ uncurry $ liftA2 shunt'
+  where
+    shunt' :: Bool -> KeyState -> KeyState
+    shunt' True s = s
+    shunt' False s = s {state = Unpressed}
 
 -- A signal function that receives key events as binary data and emits a stream
 -- of KeyState events. Since one binary message may contain multiple key
@@ -75,3 +99,10 @@ parseKeyEventsSF = proc binary -> do
     uncons' :: [KeyState] -> (Event KeyState, [KeyState])
     uncons' (x : xs) = (Event x, xs)
     uncons' [] = (NoEvent, [])
+
+-- Set the enabled/disabled state of switches in response to commands.
+setEnabledSF ::
+  forall n.
+  (KnownNat n) =>
+  SF (Event (Command n)) (V.Vector n Bool)
+setEnabledSF = setParameterSF (set change) (pure True)

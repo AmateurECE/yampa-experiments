@@ -56,10 +56,12 @@ application = proc event -> do
   keyStates <- controllerSF -< keyEvent
 
   (selected, command) <- C.configurationSF @NumberOfKeys -< keyEvent
-  powerLevels <- P.setPowerLevelSF defaults -< command
+  (mode', command') <- C.commandSwitchSF @NumberOfKeys @2 -< (keyEvent, command)
+  powerLevels <- P.setPowerLevelSF defaults -< command' `V.index` 0
+  enabled <- S.setEnabledSF -< command' `V.index` 1
 
-  state <- therapySF -< keyStates
+  state <- therapySF <<< S.enabledKeysSF -< (enabled, keyStates)
   powerLevel' <- P.showPowerLevelSF $ keys -< (powerLevels, state)
 
-  let settings' = mkSettings keys selected powerLevels
+  let settings' = mkSettings keys selected mode' powerLevels enabled
   returnA -< mkUIState state powerLevel' settings'

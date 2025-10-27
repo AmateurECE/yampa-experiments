@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds #-}
+
 module ActivationSwitch.UI
   ( mkSettings,
     SwitchSettings (..),
@@ -20,7 +22,7 @@ newtype CurrentPowerLevel = CurrentPowerLevel {current :: Maybe P.PowerLevel}
 data SwitchSettings n = SwitchSettings
   { selectedKey :: Int,
     keyIds :: V.Vector n Char,
-    values :: V.Vector n P.PowerLevel
+    values :: Either (V.Vector n P.PowerLevel) (V.Vector n Bool)
   }
   deriving (Eq)
 
@@ -40,6 +42,10 @@ instance Render T.TherapyState where
 instance Render P.PowerLevel where
   render = show
 
+instance Render Bool where
+  render True = "Enabled"
+  render False = "Disabled"
+
 instance Render CurrentPowerLevel where
   render p =
     "Power Level: " ++ case current p of
@@ -52,8 +58,7 @@ instance Render (SwitchSettings n) where
       select $
         fmap (uncurry label') $
           zip (toList $ keyIds s) $
-            render' $
-              values s
+            either render' render' (values s)
     where
       label' :: Char -> String -> String
       label' k v = [k] ++ ": " ++ v
@@ -71,11 +76,16 @@ instance Render (SwitchSettings n) where
 mkSettings ::
   V.Vector n Char ->
   Finite n ->
+  Finite 2 ->
   V.Vector n P.PowerLevel ->
+  V.Vector n Bool ->
   SwitchSettings n
-mkSettings keys s powerLevels' =
+mkSettings keys s mode' powerLevels' enabled' =
   let selectedKey' = fromInteger $ getFinite s
-   in SwitchSettings selectedKey' keys powerLevels'
+      values' = case mode' of
+        0 -> Left $ powerLevels'
+        _ -> Right $ enabled'
+   in SwitchSettings selectedKey' keys values'
 
 mkUIState :: T.TherapyState -> Maybe P.PowerLevel -> SwitchSettings n -> UIState n
 mkUIState therapy' powerLevel' settings' = UIState therapy' (CurrentPowerLevel powerLevel') settings'
