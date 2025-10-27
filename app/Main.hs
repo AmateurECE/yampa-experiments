@@ -1,4 +1,6 @@
 module Main (main) where
 
+import ActivationSwitch
+
 main :: IO ()
-main = putStrLn "Hello, world!"
+main = activationSwitch

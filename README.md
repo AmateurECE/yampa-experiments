@@ -1,4 +1,6 @@
-# yampa-experiments
+# Activation Switch (Stage 1)
+
+![Stage 1 Design](./docs/ActivationSwitch-Design.png)
 
 # Building the Diagrams
 
